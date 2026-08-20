@@ -1,0 +1,17 @@
+{
+  "name": "html-edit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @html-edit/selection-core",
+    "test:selection": "npm run verify --workspace @html-edit/selection-core",
+    "verify": "npm run test:selection"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

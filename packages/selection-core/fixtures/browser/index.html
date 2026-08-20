@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>HTML Edit Selection Browser Test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: sans-serif; }
+    .case { position: relative; width: 360px; height: 150px; margin: 20px; border: 1px solid #999; }
+    .fill { position: absolute; inset: 0; }
+    .center { position: absolute; left: 90px; top: 45px; width: 180px; height: 60px; }
+    .transparent { background: transparent; }
+    .painted { background: rgb(230, 230, 230); border: 1px solid #333; }
+    #pointer-none-text { pointer-events: none; }
+    #editor-overlay { z-index: 100; }
+    #inactive-scene { z-index: 90; opacity: 0; }
+    #visible-front { z-index: 20; background: rgb(255, 210, 100); }
+    #behind-image { z-index: 10; }
+  </style>
+</head>
+<body>
+  <section class="case" id="nested-case">
+    <div class="fill painted" data-he-id="nested-card">
+      <h2 class="center"><span data-he-id="nested-text">精准选中文字</span></h2>
+    </div>
+  </section>
+
+  <section class="case" id="transparent-case">
+    <img id="transparent-image" data-he-id="transparent-image" class="center" alt="target" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='60'%3E%3Crect width='180' height='60' fill='%2388bbee'/%3E%3C/svg%3E" />
+    <div id="transparent-overlay" data-he-id="transparent-overlay" class="fill transparent"></div>
+  </section>
+
+  <section class="case" id="pointer-case">
+    <div class="fill painted">
+      <span id="pointer-none-text" data-he-id="pointer-none-text" class="center">pointer-events none</span>
+    </div>
+  </section>
+
+  <section class="case" id="scene-case">
+    <button id="active-scene-target" data-he-id="active-scene-target" class="center">当前场景</button>
+    <div id="inactive-scene" data-he-id="inactive-scene" data-he-scene-inactive="true" class="fill painted"></div>
+  </section>
+
+  <section class="case" id="editor-case">
+    <button id="editor-behind" data-he-id="editor-behind" class="center">正文按钮</button>
+    <div id="editor-overlay" data-he-editor-ui="selection-box" class="fill transparent"></div>
+  </section>
+
+  <section class="case" id="paint-case">
+    <img id="behind-image" data-he-id="behind-image" class="center" alt="behind" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='60'%3E%3Crect width='180' height='60' fill='%2388bbee'/%3E%3C/svg%3E" />
+    <button id="visible-front" data-he-id="visible-front" class="center">真实前景</button>
+  </section>
+
+  <pre id="results">RUNNING</pre>
+  <script type="module">
+    import { hitTestDocument } from '/dist/browser-hit-test.js';
+
+    const failures = [];
+    const assert = (condition, message) => {
+      if (!condition) failures.push(message);
+    };
+    const centerOf = (element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    };
+
+    const nestedPoint = centerOf(document.querySelector('[data-he-id="nested-text"]'));
+    const nested = hitTestDocument(document, nestedPoint, { deep: true });
+    assert(nested.selected?.targetId === 'nested-text', `nested selected ${nested.selected?.targetId}`);
+
+    const transparentPoint = centerOf(document.querySelector('#transparent-image'));
+    const transparent = hitTestDocument(document, transparentPoint, { deep: true });
+    assert(transparent.selected?.targetId === 'transparent-image', `transparent selected ${transparent.selected?.targetId}`);
+    assert(transparent.candidates.some((item) => item.targetId === 'transparent-overlay'), 'transparent overlay missing from cycle stack');
+
+    const pointerPoint = centerOf(document.querySelector('#pointer-none-text'));
+    const pointerDirect = document.elementsFromPoint(pointerPoint.x, pointerPoint.y).map((el) => el.id || el.getAttribute('data-he-id') || el.tagName);
+    const pointer = hitTestDocument(document, pointerPoint, { deep: true });
+    assert(pointer.selected?.targetId === 'pointer-none-text', `pointer-none selected ${pointer.selected?.nodeKey}/${pointer.selected?.targetId}; direct ${pointerDirect.join('>')}; candidates ${pointer.candidates.map((item) => `${item.nodeKey}:${item.kind}:${item.paintOrder}:${item.selectionDisposition}`).join('|')}`);
+
+    const scenePoint = centerOf(document.querySelector('#active-scene-target'));
+    const sceneDirect = document.elementsFromPoint(scenePoint.x, scenePoint.y).map((el) => el.id || el.getAttribute('data-he-id') || el.tagName);
+    const scene = hitTestDocument(document, scenePoint, { deep: true });
+    assert(scene.selected?.targetId === 'active-scene-target', `scene selected ${scene.selected?.nodeKey}/${scene.selected?.targetId}; direct ${sceneDirect.join('>')}; candidates ${scene.candidates.map((item) => `${item.nodeKey}:${item.kind}:${item.paintOrder}:${item.selectionDisposition}`).join('|')}`);
+
+    const editorPoint = centerOf(document.querySelector('#editor-behind'));
+    const editorDirect = document.elementsFromPoint(editorPoint.x, editorPoint.y).map((el) => el.id || el.getAttribute('data-he-id') || el.tagName);
+    const editor = hitTestDocument(document, editorPoint, { deep: true });
+    assert(editor.selected?.targetId === 'editor-behind', `editor selected ${editor.selected?.nodeKey}/${editor.selected?.targetId}; direct ${editorDirect.join('>')}; candidates ${editor.candidates.map((item) => `${item.nodeKey}:${item.kind}:${item.paintOrder}:${item.selectionDisposition}`).join('|')}`);
+
+    const paintPoint = centerOf(document.querySelector('#visible-front'));
+    const paintDirect = document.elementsFromPoint(paintPoint.x, paintPoint.y).map((el) => el.id || el.getAttribute('data-he-id') || el.tagName);
+    const paint = hitTestDocument(document, paintPoint, { deep: true });
+    assert(paint.selected?.targetId === 'visible-front', `paint selected ${paint.selected?.nodeKey}/${paint.selected?.targetId}; direct ${paintDirect.join('>')}; candidates ${paint.candidates.map((item) => `${item.nodeKey}:${item.kind}:${item.paintOrder}:${item.selectionDisposition}`).join('|')}`);
+
+    document.querySelector('#results').textContent = failures.length === 0
+      ? 'PASS: browser selection golden cases'
+      : `FAIL:\n${failures.join('\n')}`;
+  </script>
+</body>
+</html>
