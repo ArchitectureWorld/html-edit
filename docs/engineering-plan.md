@@ -1,103 +1,130 @@
-# HTML Edit 第一版研发技术方案
+# HTML Edit 研发实施方案 v2
 
-> 状态：**研发基线 v1，已冻结**
-> 生效日期：2026-08-20
-> 产品边界：[`product-core.md`](product-core.md)
-> 原则：人工操作优先；自研产品内核；复用成熟基础库；Agent 不进入前三个月 MVP
+> 状态：**已冻结执行基线 v2**  
+> 生效日期：2026-08-25  
+> 产品边界：[`product-core.md`](product-core.md)  
+> 完整选型论证：[`architecture/technical-architecture.md`](architecture/technical-architecture.md)  
+> 冻结决策：[`adr/0001-core-architecture-decisions.md`](adr/0001-core-architecture-decisions.md)
 
-## 1. 技术路线
+## 1. 实施结论
 
-第一版采用本地优先的 Electron 桌面架构，直接打开标准 HTML、CSS、JavaScript 和本地媒体项目。
+HTML Edit 采用：
 
-```text
-Electron 43 + Chromium
-React 19.2 + TypeScript 5.9 + Vite 8.1
-Zustand + Radix UI + CSS Modules
+> **在现有仓库继续开发，自研决定产品成立的核心，直接复用成熟基础库，只借鉴完整开源产品的局部架构和交互。**
 
-iframe + Preview Bridge + Real DOM
-Moveable + Selecto + Monaco
+不得：
 
-parse5 + Magic String + PostCSS
-Self-built Timeline Core / Timeline UI
-Web Animations API + HTMLMediaElement
+- Fork OpenPencil、GrapesJS、Webstudio、Scena 作为产品底座；
+- 用 Canvas SceneGraph 替代真实 DOM；
+- 将第三方编辑器 Project JSON 设为工程权威模型；
+- 让 UI、Agent、插件直接修改源码或工程 JSON；
+- 在第一阶段人工闭环之前进入 Timeline、MCP、CRDT 或最终 MP4。
 
-Electron Main Process + Fastify
-Vitest + Playwright
-Electron Forge + GitHub Actions
-```
-
-不以 GrapesJS、Pinegrow、Pencil 或 Webstudio 作为产品底座。HTML Edit 自研：
+## 2. 固定技术栈
 
 ```text
-Preview Bridge
-Source Patch Engine
-Selection / Command / Transaction / Undo
-Timeline Model / Core / UI / Compiler
-Interaction Model
-Export Runtime
+Desktop       Electron 43 + Chromium
+Editor UI     React 19.2 + TypeScript 5.9 + Vite 8.x
+UI State      Zustand（仅 session / panel / selection UI 状态）
+UI Components Radix UI + CSS Modules
+
+Canvas        sandboxed same-origin iframe + Real DOM
+Overlay       Moveable + Selecto；Guides 条件引入
+Source View   Monaco
+
+Schema        Zod 4 + JSON Schema
+HTML AST      parse5
+Patch         Magic String
+CSS           PostCSS + CSSTree
+Timeline      Self-built model + deterministic evaluator
+Playback      Web Animations API + HTMLMediaElement
+
+Local Server  Electron Main + Fastify
+Testing       Vitest + Playwright
+Packaging     Electron Forge + GitHub Actions
 ```
 
-标准 HTML、CSS、JavaScript 始终是网页 Source of Truth；`.html-edit` 只保存结构化附加数据。
+依赖必须锁定精确版本并记录许可证。禁止在核心运行时直接使用 `latest`。
 
-## 2. 第一版范围
+## 3. 开源复用与借鉴清单
 
-第一版必须形成完整人工闭环：
+| 来源 | 本项目采用内容 | 采用方式 | 不采用内容 |
+|---|---|---|---|
+| OpenPencil | 包边界、格式 Adapter、节点索引、图层虚拟化、CLI / MCP 思路 | 研究实现；后期独立 Adapter | CanvasKit 主画布、Figma SceneNode、完整 Fork |
+| GrapesJS | iframe Canvas、Model / View 解耦、Layer / Style 面板组织 | UX 与架构参考 | GrapesJS Project JSON、整页重新生成 |
+| Webstudio | computed/source/override 样式来源、断点、Flex/Grid Inspector | Inspector 设计参考 | AGPL Core、专有动画能力 |
+| Puck | Component Registry、字段 Schema、Inspector Field | 后期组件 Adapter 参考 | React Data 作为通用网页模型 |
+| Moveable | 拖动、缩放、旋转、控制点、几何信息 | **直接依赖**，仅 Overlay | 语义选择、持久化和布局决策 |
+| Selecto | 区域框选、候选集合 | **直接依赖**，与 Selection Core 结合 | 仅凭 bounding box 作为最终命中 |
+| Scena / Scene.js | 时间线布局、轨道、关键帧、画布联动 UX | 交互参考 | Scene.js 数据作为 canonical Timeline |
+| Theatre.js | 曲线编辑和 sequence UX | 交互参考 | Studio / 项目格式进入核心 |
+| Penpot | Flex/Grid、约束、组件 UI | 设计参考 | 完整技术栈 |
+| Remotion | 程序化逐帧视频导出 | MVP 后可选 Adapter | 核心 Timeline 和默认商业依赖 |
+| FFmpeg | 编码、封装、媒体处理 | MVP 后经许可证审计使用 | 未审计 GPL / nonfree 构建 |
+| HyperFrames | HTML 组合到视频、字幕、转场工作流 | MVP 后 Adapter / 流程参考 | 编辑器内核 |
+| Yjs | transaction origin、shared type 思路 | 协同阶段评估 | MVP 直接进入 Core |
+
+## 4. 总体架构
 
 ```text
-打开 / 运行 / 保存 / 重开普通 HTML
-真实 DOM 选择，Layers / Inspector / Timeline 同步
-文字 / 图片 / 视频 / SVG / 属性 / 样式 / 尺寸 / 位置编辑
-拖动 / 缩放 / 多选 / 吸附 / 锁定 / 隐藏 / 复制 / 删除
-稳定 data-he-id
-最小 HTML Patch + generated CSS
-Command / Operation / Transaction + Undo / Redo + revision
-DOM / Video / Audio / Event 多轨时间线
-play / pause / seek / scrub / zoom / move / trim / split / copy / snap / keyframe
-点击 / 悬停 / 场景进入 / 进入视口 / 时间事件
-标准 HTML 独立导出
-Windows 安装包 + 自动测试 + 验收项目
+┌──────────────────────────────────────────────────────────────┐
+│ Human UI / Keyboard / Future CLI / Future MCP / Future Agent │
+└──────────────────────────────┬───────────────────────────────┘
+                               ▼
+                       Command Gateway
+                               ▼
+                    Transaction Coordinator
+                ┌──────────────┼──────────────┐
+                ▼              ▼              ▼
+       HE Project Graph   Source Patch     Timeline /
+       + Source Binding      Engine        Interaction
+                └──────────────┼──────────────┘
+                               ▼
+                       Preview Compiler
+                               ▼
+               Sandboxed same-origin iframe
+                      Real Chromium DOM
+                               ▲
+                               │
+                 Preview Bridge / DOM Index
+                               ▲
+                               │
+       Host Overlay: Selection / Moveable / Selecto / Guides
 ```
 
-明确后置：
+### 4.1 进程边界
 
 ```text
-React / Vue / Next.js 源码级双向编辑
-云账号 / 数据库 / 对象存储 / 多人 CRDT
-MCP / REST / WebSocket / Plugin SDK / 正式 Agent
-专业调色 / 混音 / AE 合成 / 最终 MP4
-Three.js / 3DGS / Lottie Adapter
-模板市场 / 素材商城 / CMS
+Electron Main
+├─ Window / lifecycle
+├─ local preview server
+├─ file access and path policy
+├─ atomic save / recovery
+├─ CDP deep hit-test
+└─ packaging / update hooks
+
+Preload
+├─ allowlisted IPC
+├─ sender/origin/session validation
+└─ Zod message validation
+
+Renderer / Editor
+├─ React UI
+├─ Command Gateway
+├─ Selection UI
+├─ Overlay Editor
+├─ Inspector / Layers / Timeline UI
+└─ project session state
+
+Preview iframe
+├─ actual user HTML/CSS/JS
+├─ Runtime DOM Index
+├─ Preview Bridge
+├─ WAAPI / HTMLMediaElement playback
+└─ runtime diagnostics
 ```
 
-## 3. 总体架构
-
-```mermaid
-flowchart LR
-    UI["React Editor"] --> Command["Command Bus / Transaction"]
-    Timeline["Timeline Core & UI"] --> Command
-    Interaction["Interaction Model"] --> Command
-    Command --> Source["Source Patch Engine"]
-    Command <--> Bridge["Preview Bridge"]
-    Source <--> Main["Electron Main / Fastify / Atomic Save"]
-    Main <--> Files["HTML / CSS / JS / .html-edit"]
-    Main --> Canvas["Sandboxed iframe / Real HTML"]
-    Canvas <--> Bridge
-    Timeline --> Export["Export Runtime"]
-    Interaction --> Export
-    Future["REST / WebSocket / SDK / MCP"] -.-> Command
-```
-
-进程边界：
-
-```text
-Electron Main = 窗口 / 文件 / 本地协议 / Fastify / 原子保存 / 恢复
-Preload       = 白名单 IPC + Schema 校验
-Renderer      = UI / 选择 / 命令 / Timeline / Interaction
-iframe        = 真实用户 HTML / DOM / 动画 / 媒体
-Bridge        = DOM 摘要 / 选择 / Preview Mutation / Runtime 通信
-```
-
-安全固定项：
+Electron 安全固定项：
 
 ```text
 nodeIntegration: false
@@ -106,9 +133,78 @@ sandbox: true
 webSecurity: true
 ```
 
-不使用 `<webview>`；iframe 只加载绑定 `127.0.0.1` 随机端口的受控服务；每次预览使用随机 session token；校验 IPC sender、origin、session、消息 Schema 和项目路径；外链、弹窗、下载和导航默认受限；保存失败不得覆盖最后有效文件。
+iframe 仅加载绑定 `127.0.0.1` 随机端口的受控服务；每次预览使用随机 session token；外链、弹窗、下载和导航默认受限。
 
-## 4. 项目模型与稳定 ID
+## 5. Monorepo 目录
+
+在当前 npm workspaces 上扩展：
+
+```text
+html-edit/
+├─ apps/
+│  ├─ desktop/                 # Electron Main / Preload / Forge
+│  └─ editor/                  # React editor shell
+│
+├─ packages/
+│  ├─ schema/                  # Zod、JSON Schema、migration
+│  ├─ project-graph/           # HE Project Graph
+│  ├─ source-binding/          # targetId ↔ source / runtime binding
+│  ├─ command-core/            # Command、Handler、validation、dry-run
+│  ├─ transaction-core/        # revision、inverse、Undo/Redo、rollback
+│  ├─ preview-bridge/          # iframe communication、DOM Index
+│  ├─ selection-core/          # 已有；纯命中与排序算法
+│  ├─ overlay-editor/          # selection overlay、Moveable、Selecto
+│  ├─ source-patch/            # parse5、Magic String、HTML patch
+│  ├─ style-engine/            # generated CSS、provenance、CSSTree
+│  ├─ project-store/           # atomic save、history、autosave、recovery
+│  ├─ timeline-model/          # Scene / Track / Clip / Keyframe Schema
+│  ├─ timeline-core/           # logical clock、evaluate、playback plan
+│  ├─ timeline-ui/             # timeline direct manipulation
+│  ├─ media-core/              # video/audio loading、seek、sync
+│  ├─ interaction-model/       # Trigger / Action / State Schema
+│  ├─ interaction-runtime/     # Preview / Export shared compiler
+│  ├─ import-html/             # open ordinary HTML projects
+│  ├─ export-html/             # standalone HTML runtime export
+│  ├─ agent-contract/          # JSON Schema、structured result、future MCP
+│  └─ test-fixtures/           # Golden Projects
+│
+├─ docs/
+│  ├─ architecture/
+│  ├─ adr/
+│  ├─ schemas/
+│  └─ handoff/
+└─ package.json
+```
+
+## 6. 包依赖规则
+
+固定依赖方向：
+
+```text
+schema
+  ↑
+project-graph / timeline-model / interaction-model
+  ↑
+command-core
+  ↑
+transaction-core
+  ↑
+adapters / UI / desktop
+```
+
+禁止：
+
+- `schema` 依赖 React；
+- `timeline-core` 依赖 `timeline-ui`；
+- `project-graph` 保存 `DOM Element`；
+- `command-core` 直接访问 Electron 文件系统；
+- `selection-core` 依赖 Moveable / Selecto；
+- `preview-bridge` 成为持久数据权威；
+- UI 绕过 Command Gateway 直接改工程数据；
+- Agent API 直接写文件；
+- 跨包导入另一个包的内部源码路径。
+
+## 7. 项目数据与持久化
 
 ```text
 user-project/
@@ -119,73 +215,182 @@ user-project/
 ├─ html-edit.generated.css
 └─ .html-edit/
    ├─ project.json
+   ├─ graph.json
    ├─ timeline.json
    ├─ interactions.json
+   ├─ operations.ndjson
    └─ history/
 ```
 
-```text
-HTML / CSS / JavaScript = 真正网页
-project.json             = 入口、页面、素材、版本和设置
-timeline.json            = 场景、轨道、片段和关键帧
-interactions.json        = 触发器、动作和状态
-html-edit.generated.css  = 可视化编辑产生的受控样式
-```
+### 7.1 双权威域
 
-持久编辑对象必须拥有稳定 ID：
+| 数据 | 权威来源 |
+|---|---|
+| HTML 标签、文本、属性、原始结构 | 用户 HTML |
+| 用户 CSS 与未知级联 | 用户 CSS |
+| JavaScript 与自定义逻辑 | 用户 JS |
+| HTML Edit 生成的视觉覆盖 | `html-edit.generated.css` |
+| 稳定 ID、能力、锁定、隐藏、别名 | `graph.json` |
+| Source Binding | `graph.json` + 可重建 Source Index |
+| 动画和媒体片段 | `timeline.json` |
+| 触发器、动作和状态 | `interactions.json` |
+| revision、origin、Undo/Redo | Transaction / Operation Log |
+| hover、selection box、panel state | 内存 UI Store |
+| DOM Element 引用 | Preview Runtime，可丢弃 |
 
-```html
-<h1 data-he-id="he_01J...">标题</h1>
-```
-
-ID 必须项目内唯一、创建后稳定、复制时更新、删除后不复用，并由 Source Patch、Timeline、Interaction 和 History 共用。不得长期依赖 `:nth-child()`、XPath、DOM index、临时图层顺序或单一 CSS class。
-
-## 5. Command 与事务
-
-```text
-UI Intent
-→ Command
-→ Operation
-→ Transaction
-→ Project / Source / Timeline / Interaction Service
-→ Preview
-→ Save
-```
+### 7.2 HE Project Graph v0.1
 
 ```ts
-type Operation = {
-  id: string;
+export type HEProjectGraph = {
+  schemaVersion: "0.1.0";
   projectId: string;
   revision: number;
-  type:
-    | "element.text.set"
-    | "element.attribute.set"
-    | "element.style.set"
-    | "element.transform.set"
-    | "timeline.clip.update"
-    | "timeline.keyframe.upsert"
-    | "interaction.upsert";
-  targetId?: string;
-  payload: unknown;
-  source: "human" | "system" | "future-agent";
+  entry: string;
+  fps: { numerator: number; denominator: number };
+  pages: Record<string, HEPage>;
+  nodes: Record<string, HEEditableNode>;
+  assets: Record<string, HEAsset>;
+  settings: HEProjectSettings;
 };
+```
+
+节点仅保存持续编辑投影：
+
+```ts
+export type HEEditableNode = {
+  id: string;
+  pageId: string;
+  parentId: string | null;
+  childIds: string[];
+  kind:
+    | "element"
+    | "text"
+    | "image"
+    | "video"
+    | "audio"
+    | "svg"
+    | "canvas"
+    | "iframe"
+    | "component-host"
+    | "embed";
+  sourceBinding: SourceBinding;
+  capabilities: HECapability[];
+  editor: {
+    name?: string;
+    locked: boolean;
+    hidden: boolean;
+    selectable: boolean;
+  };
+  overrideRefs: string[];
+};
+```
+
+### 7.3 Source Binding
+
+```ts
+export type SourceBinding =
+  | {
+      mode: "source-backed";
+      file: string;
+      targetId: string;
+      tagName: string;
+      sourceHash: string;
+      sourceRange?: { start: number; end: number };
+      cssBindings?: CssBinding[];
+    }
+  | {
+      mode: "generated";
+      ownerFile: string;
+      targetId: string;
+    }
+  | {
+      mode: "opaque";
+      hostTargetId: string;
+      reason: OpaqueReason;
+    };
 ```
 
 规则：
 
-- 每种 Operation 有独立 Zod Schema；
-- 执行前检查 `revision`；
-- 拖动时只更新 Preview，松开后提交一个 Transaction；
-- Transaction 记录 Operations、inverse/快照和受影响文件；
-- Undo / Redo 操作 Transaction，不直接改 Zustand；
-- Preview-only Mutation 不得绕过 Command Bus 持久化；
-- 未来 Agent 只能提交相同 Command。
+- `sourceRange` 只是缓存；
+- 文件变化后按 `targetId + Source Index + sourceHash` 重建；
+- 找不到时标记 `binding-stale`；
+- 重复或缺失 ID 必须显式报错；
+- 不得静默绑定到相似元素；
+- 删除后的 ID 不复用。
 
-## 6. Preview Bridge
+### 7.4 Schema 与迁移
 
-Bridge 负责：ready/error、DOM tree、hover/select、稳定 ID 命中、元素边界、computed style、文字和媒体信息、Preview Mutation、WAAPI/媒体控制、截图、console/runtime error、iframe 缩放与坐标映射。
+- 所有持久文件必须包含 `schemaVersion`；
+- 使用 Zod 4 生成 TypeScript 类型和 JSON Schema；
+- 未知新版本只读打开；
+- migration 必须可测试、可回滚；
+- JSON 使用稳定排序，减少无意义 Diff；
+- MVP 权威持久化继续使用 JSON / NDJSON；
+- CBOR、Protobuf、SQLite 只可作为后期缓存或性能层，不能替代权威 Schema。
 
-Bridge 由 Preview Server 在内存响应阶段注入，不永久写入项目。消息必须包含 `sessionId`，并校验来源和 Schema。
+## 8. Command 与 Transaction
+
+```text
+UI Intent / Future Agent Intent
+→ Command Gateway
+→ Schema Validation
+→ Permission / Revision Check
+→ Dry Run / Diagnostics
+→ Transaction Coordinator
+→ Domain Services
+→ Preview Apply
+→ Atomic Persistence
+```
+
+```ts
+export type HECommand<TType extends string, TPayload> = {
+  type: TType;
+  commandId: string;
+  projectId: string;
+  baseRevision: number;
+  targetId?: string;
+  source: "human" | "system" | "future-agent";
+  timestamp: string;
+  dryRun: boolean;
+  payload: TPayload;
+};
+```
+
+每个 Command 必须有：
+
+- 独立 Zod Schema；
+- validation；
+- dry-run；
+- structured diagnostics；
+- revision conflict；
+- files / domains affected；
+- inverse、rollback 或可验证快照；
+- deterministic result。
+
+拖动和缩放时：
+
+```text
+pointermove → preview-only mutation
+pointerup   → one committed Transaction
+```
+
+Undo / Redo 操作 Transaction，不直接回滚 Zustand 或 DOM。
+
+## 9. Preview Bridge 与 Runtime DOM Index
+
+Preview Bridge 负责：
+
+- ready / error / runtime diagnostics；
+- Runtime DOM Index；
+- hover / select / inspect；
+- stable ID 命中；
+- element rect、computed style、media state；
+- preview-only operations；
+- WAAPI / media playback；
+- iframe zoom、scroll 和坐标映射。
+
+Bridge 由本地 Preview Server 在响应阶段注入，不永久写入用户源码。所有消息包含 `sessionId` 并经过 origin、sender、session 和 Zod 校验。
 
 ```ts
 interface CanvasAdapter {
@@ -197,9 +402,52 @@ interface CanvasAdapter {
 }
 ```
 
-未来若改用 WebContentsView，只替换 Adapter，不修改 Command、Timeline 和项目数据。
+## 10. Selection 与 Overlay
 
-## 7. Source Patch Engine
+选择系统以 [`selection-system.md`](selection-system.md) 为强制实施契约。
+
+```text
+Canvas Pointer
+→ Coordinate Mapper
+→ Fast Hit Test
+   ├─ text caret / Range
+   └─ elementsFromPoint()
+→ Deep Hit Test Fallback
+   ├─ descendant geometry
+   └─ CDP DOM.getNodeForLocation
+→ Candidate Normalizer
+→ Visibility / Lock / Editor Layer Filter
+→ Semantic Ranker
+→ SelectionCandidateStack
+→ Unified Selection Store
+```
+
+Moveable / Selecto 的边界：
+
+- Moveable：控制框、拖动、缩放、旋转、几何信息；
+- Selecto：区域多选；
+- Selection Core：决定“用户语义上选中了谁”；
+- Overlay：绘制反馈；
+- Transaction：决定如何持久化；
+- 任何第三方控件不得自行写 DOM 或源码。
+
+## 11. 变换与布局策略
+
+画布拖动必须区分布局类型：
+
+| 当前布局 | 默认提交策略 |
+|---|---|
+| absolute / fixed | 更新 inset / transform 等受控属性 |
+| normal flow | 优先 margin / container layout，不自动改成 absolute |
+| Flex child | 编辑 order、grow、basis、align-self 或受控 offset |
+| Grid child | 编辑 grid position、align-self、justify-self |
+| 不可安全推断 | 仅 Preview，提交前要求显式策略或降级 |
+
+不得为了“拖得动”把所有元素强行变为 `position:absolute`。
+
+## 12. Source Patch 与 Style Engine
+
+### 12.1 HTML Patch
 
 禁止：
 
@@ -207,101 +455,51 @@ interface CanvasAdapter {
 HTML → DOM → 修改 → outerHTML → 整页覆盖
 ```
 
-HTML 回写：
+固定流程：
 
 ```text
-原始 HTML
+Original HTML
 → parse5 + sourceCodeLocationInfo
 → Source Index
-→ 根据 data-he-id 定位源码区间
-→ Magic String 生成最小 Patch
-→ 重新解析校验
-→ 原子保存
-→ 重建 Source Index
+→ targetId / Source Binding 定位
+→ Magic String 最小 Patch
+→ reparse / validate
+→ Transaction Manifest
+→ atomic save
+→ rebuild Source Index
 ```
 
-CSS 回写：
+第一阶段 Patch：
 
-- 可视化样式默认写入 `html-edit.generated.css`；
-- PostCSS 维护一个 `targetId` 对应一个受控 selector；
-- 删除无用声明和空规则；
-- Inspector 区分 computed、source 和 HTML Edit override；
-- MVP 不自动重写用户原 CSS。
+- Ensure stable ID；
+- text；
+- attribute；
+- safe insert / delete / reorder；
+- basic media source；
+- generated stylesheet link。
 
-保存采用同目录临时文件、`fsync`、原子 rename、必要历史和 revision；多文件修改使用 Transaction Manifest，避免 HTML、CSS 和 JSON 半提交。
+### 12.2 CSS
 
-最小 PoC：
+视觉样式默认写入 `html-edit.generated.css`：
 
-```ts
-import { parse } from "parse5";
-import MagicString from "magic-string";
-
-export function patchText(
-  html: string,
-  start: number,
-  end: number,
-  nextText: string,
-): string {
-  const source = new MagicString(html);
-  source.update(start, end, nextText);
-  const result = source.toString();
-  parse(result, { sourceCodeLocationInfo: true });
-  return result;
+```css
+[data-he-id="he_title"] {
+  font-size: 72px;
 }
 ```
 
-正式实现必须由 Source Index 取得 `start/end`，并加入 escaping、属性 Patch、结构操作、格式保持、文件锁、revision 和 Transaction。
+Style Engine 必须显示：
 
-## 8. 数据 Schema
-
-三类文件均保留 `schemaVersion`，启动时通过 Zod 校验；未知版本只读打开；migration 可测试、可回滚，并采用稳定排序减少无意义 Diff。
-
-```json
-{
-  "project.json": {
-    "schemaVersion": 1,
-    "projectId": "project_demo",
-    "entry": "index.html",
-    "stableIdAttribute": "data-he-id",
-    "fps": 30,
-    "revision": 12
-  },
-  "timeline.json": {
-    "schemaVersion": 1,
-    "durationMs": 12000,
-    "tracks": [
-      {
-        "type": "dom-animation",
-        "targetId": "he_title",
-        "clips": [
-          {
-            "startMs": 1000,
-            "durationMs": 1500,
-            "keyframes": [
-              { "timeMs": 0, "property": "opacity", "value": 0 },
-              { "timeMs": 1500, "property": "opacity", "value": 1 }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "interactions.json": {
-    "schemaVersion": 1,
-    "interactions": [
-      {
-        "targetId": "he_cta",
-        "trigger": { "type": "click" },
-        "actions": [
-          { "type": "timeline.play", "timelineId": "timeline_main" }
-        ]
-      }
-    ]
-  }
-}
+```text
+computed value
+source declaration
+HTML Edit override
+inheritance / variable source
 ```
 
-## 9. Timeline 与 Interaction
+MVP 不自动重写用户原 CSS。用户明确进入源码模式后，Monaco 才允许高级编辑，并通过 file watcher / revision 重新绑定。
+
+## 13. Timeline v0.1
 
 ```text
 Timeline
@@ -312,142 +510,312 @@ Timeline
 └─ Marker / Event
 ```
 
-第一版 Track 为 `dom-animation`、`video`、`audio`、`event`。必须支持 Play/Pause/Seek/Scrub、Playhead/Zoom/Snap、Move/Trim/Split/Copy、Lock/Hide/Mute、Keyframe、基础 Easing 和 DOM/Video/Audio 同步；高级曲线、调色、混音和 AE 合成后置。
+第一版 Track：
+
+- `dom-animation`；
+- `video`；
+- `audio`；
+- `event`。
+
+时间使用整数微秒 `timeUs`；fps 是显示和吸附参数，不是底层时间真相。
+
+```ts
+interface TimelineEvaluator {
+  evaluate(timeUs: number, snapshot: TimelineSnapshot): EvaluationResult;
+}
+```
+
+Evaluator 必须纯函数化、可重复、可测试，不保存 WAAPI、DOM、MediaElement 或 React 状态。
+
+运行流程：
 
 ```text
 timeline.json
-→ Normalize / Validate
+→ validate / normalize
+→ deterministic evaluate
 → Playback Plan
-→ DOM → Web Animations API
-→ Video / Audio → HTMLMediaElement
-→ Event → Interaction Runtime
+→ DOM adapter → WAAPI / direct style
+→ Media adapter → HTMLMediaElement
+→ Event adapter → Interaction Runtime
 ```
 
-时间以整数毫秒存储；`fps=30` 只用于显示、吸附和帧步进；Core 不保存 WAAPI、GSAP 或 React 状态；播放使用统一 logical clock；`seek(timeMs)` 必须可重复、可测试；Timeline UI 与 Core 分离。
+第一版 UI：
 
-第一版 Trigger：`click`、`hover-enter`、`hover-leave`、`scene-enter`、`in-view`、`time`。
-第一版 Action：`timeline.play/pause/seek`、`element.show/hide`、`state.set`、`media.play/pause`、`navigation.anchor/scene`。
+- play / pause / seek / scrub；
+- playhead / zoom / snap；
+- track / clip / keyframe；
+- move / trim / split / copy；
+- lock / hide / mute；
+- basic easing；
+- timeline Undo / Redo。
 
-Trigger 与 Action 均有 Schema；Preview 与 Export 共用 Compiler；缺失引用时明确报错；禁止把产品交互散落为不可审查的内联脚本。
+## 14. Interaction v0.1
 
-## 10. UI/UX 基线
-
-固定工作区：
+Trigger：
 
 ```text
-顶部工具栏
-左侧 Layers / Scenes / Assets
-中央 Real HTML Canvas
-右侧 Layout / Style / Animation / Interaction
-底部 Timeline
+click
+hover-enter
+hover-leave
+scene-enter
+in-view
+time
 ```
 
-第一轮只重点验证“打开项目、点击元素、修改文字、创建动画、编辑视频”五条路径。要求直接操作、即时反馈、统一 Selection Store、专业快捷键、错误可见、源码变更可审查；第一版优先信息层级、密度和反馈，不优先品牌动效。
-
-## 11. 十二周计划
-
-| 周 | 交付 |
-|---|---|
-| W1 | Electron / React / Vite 骨架、进程边界、Zod、Command Bus、Undo/Redo、五条 UX 流程 |
-| W2 | 项目打开、Fastify、Range、sandboxed iframe、session、错误面板 |
-| W3 | Preview Bridge、DOM 选择、Layers、Moveable、Selecto、`data-he-id` |
-| W4 | 文字/属性/样式修改、HTML/CSS Patch、Transaction、原子保存、重开验收 |
-| W5 | Scene/Track/Clip/Keyframe Schema、Playhead、Zoom |
-| W6 | Move/Trim/Split/Copy/Snap/Lock/Hide/Mute、Undo |
-| W7 | Playback Plan、WAAPI、关键帧、easing、seek/scrub |
-| W8 | HTMLMediaElement、in/out、媒体状态、统一回看 |
-| W9 | Trigger/Action、点击/悬停/场景/视口/时间事件 |
-| W10 | 快捷键、Inspector、Monaco/Diff、Assets、Preview Mode、错误反馈 |
-| W11 | 多文件原子提交、恢复、file watcher、Vitest、Playwright、性能基线 |
-| W12 | GitHub Actions、Windows 安装包、Demo、完整验收、下一阶段入口 |
+Action：
 
 ```text
-阶段一：HTML → 选择 DOM → 修改 → Undo/Redo → 保存 → 重开
-阶段二：DOM + Video + Audio 时间线，任意 seek / scrub 状态正确
-阶段三：交互触发，Preview 与 Export 一致，Windows 安装包可运行
+timeline.play / pause / seek
+element.show / hide
+state.set
+media.play / pause
+navigation.anchor / scene
 ```
 
-## 12. 测试、CI 与风险
+Preview 与 Export 共用同一 Resolver / Compiler。缺失引用必须明确报错，不得静默失败。
 
-测试覆盖 Schema、stable ID、Command、Transaction、revision、Timeline 时间映射、trim/split、Interaction Compiler、HTML Patch、generated CSS、migration 和原子保存失败路径。
+## 15. Node 支持与 opaque 策略
 
-Golden Projects 覆盖单文件、多文件、图片/SVG/视频/音频、Flex/Grid/absolute、复杂源码、运行错误、大 DOM 和长 Timeline。Playwright 验证：
+### 完整支持
+
+- 普通容器；
+- 文本；
+- 图片；
+- 视频、音频；
+- SVG 根和基础图形；
+- 链接、按钮、基础表单；
+- absolute / fixed；
+- 基础 Flex / Grid。
+
+### 部分支持
+
+- pseudo element 映射宿主；
+- background image；
+- Open Shadow Root；
+- 同源 iframe；
+- custom element 宿主；
+- 能建立稳定 Source Binding 的动态 DOM；
+- React / Vue 区域作为 `component-host`。
+
+### opaque / embed
+
+- Canvas / WebGL / Three.js / 3DGS 内部；
+- 跨域 iframe；
+- Closed Shadow Root；
+- 无源码来源的动态节点；
+- Lottie 等未安装 Adapter 的专有对象；
+- 高风险未知脚本区。
+
+## 16. 安全、保存与恢复
+
+### 安全
+
+- 页面脚本不能获得 Node；
+- 页面不能读取项目根外文件；
+- 跨域 iframe 原子化；
+- 支持 Quarantine 模式不执行未知脚本；
+- session token 过期失效；
+- 外部导航不替换编辑器窗口；
+- 所有路径做 canonicalize 和 traversal 检查。
+
+### 保存
+
+多域修改使用 Transaction Manifest：
 
 ```text
-open-project / select-element / edit-text / edit-style / drag-resize
-undo-redo / save-reopen / timeline-keyframe / timeline-scrub
-video-trim / interaction-click / export-open
+prepare temp files
+→ validate all outputs
+→ fsync
+→ atomic rename
+→ commit revision
+→ cleanup
 ```
 
-CI 固定为：
+失败不得损坏最后有效版本。外部变化通过 file watcher + revision 产生可见冲突。
+
+## 17. 16 周 MVP 顺序
+
+### Phase 0：架构验证（W1–W2）
+
+- iframe + Preview Bridge + complex hit-test；
+- stable ID + parse5 + Magic String round-trip；
+- HE Project Graph + Source Binding；
+- deterministic Timeline seek + video seek；
+- Moveable / Selecto host overlay；
+- dependency license audit。
+
+### Phase 1：真实 HTML 编辑闭环（W3–W6）
 
 ```text
-install → lint → typecheck → unit test → build
-→ Playwright smoke → Electron package → upload artifact
+Open → Select → Ensure Stable ID → Edit
+→ Undo/Redo → Save → Reopen
 ```
 
-主要风险与控制：
+### Phase 2：时间线与媒体（W7–W10）
 
-- 任意 HTML 回写：MVP 限定普通 HTML，source location + 最小 Patch，复杂结构显式降级；
-- CSS cascade：generated CSS，显示 computed/source/override，不自动重写原 CSS；
-- 页面安全：sandbox、禁用 Node、随机 session、白名单 IPC、路径校验；
-- iframe 坐标：单一坐标模块、缩放/滚动测试、CanvasAdapter 隔离；
-- 媒体 scrub：logical clock、ready/pending/error、统一 seek；
-- Timeline 性能：Core 与 View 分离，预留虚拟化；
-- Undo 碎片：Preview 与 Commit 分离，手势合并为单 Transaction；
-- 外部冲突：revision、file watcher、重新读取和可见冲突提示；
-- 过早扩展：三阶段 Gate，新增能力先通过产品成立标准。
+- Timeline model / evaluator / UI；
+- WAAPI adapter；
+- video/audio adapter；
+- trim/split/copy；
+- DOM/media synchronized scrub。
 
-## 13. Agent 接入边界
+### Phase 3：交互与独立导出（W11–W13）
 
-前三个月只保留：
+- Trigger / Action；
+- Interaction Compiler；
+- Edit / Preview mode；
+- standalone HTML runtime；
+- runtime error and diff panels。
+
+### Phase 4：稳定化与交付（W14–W16）
+
+- Windows installer；
+- CI and performance baseline；
+- crash recovery and file watcher；
+- Golden Projects；
+- 10-minute complex demo；
+- Agent Contract schema；
+- third-party notices。
+
+## 18. 任务 ID 与依赖
+
+| ID | 包/范围 | 任务 | 依赖 | 关键验收 |
+|---|---|---|---|---|
+| ADR-001 | `docs/adr` | 冻结核心架构决策 | 无 | **本次文档同步完成** |
+| PLT-001 | `apps/desktop`,`apps/editor` | Electron/React/Vite 壳与安全边界 | ADR-001 | 窗口可启动；安全配置测试 |
+| SCH-001 | `schema` | Zod 基础类型、ID、revision、migration | ADR-001 | TS 类型和 JSON Schema |
+| GRF-001 | `project-graph` | Graph、节点索引、引用完整性 | SCH-001 | 10k 节点测试 |
+| BND-001 | `source-binding` | stable ID、binding、stale conflict | GRF-001 | 外部编辑重建/冲突 |
+| CMD-001 | `command-core` | Gateway、Handler、validation、dry-run | SCH-001 | 每个 Command 有 Schema 与诊断 |
+| TXN-001 | `transaction-core` | revision、inverse、Undo/Redo | CMD-001 | 随机事务无状态漂移 |
+| PRV-001 | `preview-bridge` | local server、bridge、DOM Index | PLT-001,SCH-001 | reload 后重建 |
+| SEL-001 | `selection-core` | 接入已有核心并补齐契约 | PRV-001 | selection Golden Cases |
+| OVL-001 | `overlay-editor` | Moveable / Selecto / Guides | SEL-001 | zoom/scroll/rotate 坐标 |
+| SRC-001 | `source-patch` | Source Index、ID/text/attr Patch | BND-001,TXN-001 | 无关字节不变化 |
+| CSS-001 | `style-engine` | generated CSS、provenance | SRC-001 | save/reopen 一致 |
+| EDT-001 | `apps/editor` | Layers、Inspector、Monaco Diff | GRF-001,OVL-001,CSS-001 | 同步选择、来源可见 |
+| STO-001 | `project-store` | atomic save、history、recovery | TXN-001,SRC-001 | 中断写入不损坏 |
+| TML-001 | `timeline-model` | timeUs Schema 与 migration | SCH-001 | Schema / boundary tests |
+| TML-002 | `timeline-core` | evaluate、clock、Playback Plan | TML-001 | 同时刻结果一致 |
+| TML-003 | `timeline-ui` | timeline direct editing | TML-002,TXN-001 | 每个手势一个 Transaction |
+| MED-001 | `media-core` | load、seek、trim、sync | TML-002 | scrub 误差达标 |
+| INT-001 | `interaction-*` | Trigger/Action/State、Resolver | TML-002,CMD-001 | Preview/Export 一致 |
+| EXP-001 | `export-html` | runtime compiler、standalone export | INT-001,CSS-001 | 无编辑器可运行 |
+| SEC-001 | 全局 | security policy、IPC、quarantine | PRV-001,STO-001 | Node/任意文件不可访问 |
+| TST-001 | `test-fixtures` | Golden Projects、perf regression | 各模块 | CI 阻止回归 |
+| PKG-001 | `apps/desktop` | Forge、Windows installer、notices | SEC-001,TST-001 | 干净 Windows 安装运行 |
+| AGT-001 | `agent-contract` | Schema、dry-run、structured result | MVP Gate | 复用 CommandService |
+| ADP-001 | `adapter-openpencil` | `.pen` 映射 PoC | MVP Gate,AGT-001 | 显式损失报告 |
+
+## 19. 当前立即执行顺序
+
+`ADR-001` 已由本次文档同步完成。下一步固定为：
 
 ```text
-Command / Operation / Transaction
-Zod Schema / targetId / revision
-可记录、可比较、可撤销的变更
+SCH-001
+→ GRF-001
+→ BND-001
+→ CMD-001
+→ TXN-001
+→ PRV-001
+→ SEL-001
+→ OVL-001
+→ SRC-001 / CSS-001
+→ EDT-001 / STO-001
+→ 第一阶段 Gate
 ```
 
-后续顺序：
+`PLT-001` 可与 `SCH-001` 并行。
+
+现有 `selection-core` 不得继续脱离 Preview Bridge 单独堆叠 UI；先补齐上游模型和运行桥接。
+
+## 20. 测试与质量门槛
+
+### Core
+
+- Schema parse / migration；
+- stable ID uniqueness；
+- Source Binding rebuild / stale；
+- Command validation / dry-run；
+- revision conflict；
+- Transaction rollback；
+- Undo / Redo；
+- HTML Patch escaping；
+- CSS provenance；
+- Timeline trim / split / move；
+- deterministic evaluate；
+- Interaction resolve；
+- atomic save failure。
+
+### Golden Projects
+
+至少覆盖：
+
+- 单文件和多文件项目；
+- Flex / Grid / absolute / transform；
+- 深层文字、透明遮罩、`pointer-events:none`；
+- SVG、video、audio；
+- 同源 iframe、Shadow DOM；
+- Canvas/WebGL opaque；
+- 5000 DOM 节点；
+- 10 分钟 / 500 Clip；
+- 外部文件冲突；
+- runtime error；
+- standalone export。
+
+### 性能
+
+- 5000 DOM：hover hit-test p95 `< 32ms`；
+- click candidate stack p95 `< 50ms`；
+- 常规页面 Overlay 目标 60fps；
+- 10 分钟 / 500 Clip seek 首个可见状态 `< 100ms`；
+- 10k HE 节点按 ID 查询近似 O(1)；
+- 保存不修改无关文件。
+
+### CI
 
 ```text
-Plugin Host
-→ 本地 REST / WebSocket
-→ Plugin SDK
-→ MCP
-→ 专业 Agent
-→ 云端协作
+install
+→ lint
+→ typecheck
+→ unit test
+→ build
+→ Playwright smoke
+→ Electron package
+→ artifact / notices
 ```
 
-未来 Agent 只能走：
+## 21. 第一阶段 Gate
+
+只有以下全部通过，才允许进入 Timeline：
 
 ```text
-结构化 Command
-→ Schema 与 revision 校验
-→ Preview
-→ Diff
-→ 人工确认
-→ Transaction
-→ Save
-```
-
-Agent 不得直接修改 DOM、源文件、Timeline JSON 或绕过 Undo / Redo。
-
-## 14. 完成定义
-
-只有在代表性普通 HTML 项目上稳定完成以下闭环，第一版才算成立：
-
-```text
-打开真实项目
-→ 选择真实 DOM
-→ 修改文字、素材、样式和位置
-→ 创建 DOM 动画并编辑视频/音频
-→ 拖动 Playhead 正确回看
-→ 配置页面交互
+打开标准 HTML 项目
+→ 第一次点击选中正确视觉对象
+→ 修改文字和样式
+→ 拖动 / 缩放 / 多选
 → Undo / Redo
 → 安全保存
-→ 关闭并重新打开
-→ 标准 HTML 项目仍正确且可独立运行
+→ 关闭重开
+→ 页面独立运行
+→ HE Graph 与源码引用一致
+→ 无关源码无大面积变化
+→ 外部修改冲突可见
 ```
 
-在此之前，不启动以 Agent、云端、模板市场、框架源码级编辑或最终 MP4 导出为主线的开发。
+## 22. 开发 Agent 完成要求
+
+每个任务必须：
+
+- 只实现一个任务 ID；
+- 先有失败测试或契约测试；
+- 使用公开包出口；
+- 不绕过 Command / Transaction；
+- 新持久数据有 Zod、Schema Version 和 migration；
+- 新依赖记录精确版本、许可证、用途、替代方案；
+- 运行真实验证命令；
+- 更新文档；
+- 提供人工验收步骤和已知限制；
+- 不以“后续补测试”作为完成。
+
+完整执行规则见仓库根目录 [`AGENTS.md`](../AGENTS.md)。
