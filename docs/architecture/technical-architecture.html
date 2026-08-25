@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HTML Edit 技术架构与开源选型执行规范 v2</title>
+<style>
+:root{--bg:#0b1020;--panel:#111a2f;--paper:#f7f9fc;--text:#142033;--muted:#62718a;--line:#dbe2ec;--accent:#4f7cff;--good:#0f8a5f;--warn:#b86800}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;background:var(--paper);color:var(--text);line-height:1.68}.hero{background:linear-gradient(135deg,var(--bg),#172b55);color:#fff;padding:64px 28px}.hero-inner,.wrap{max-width:1120px;margin:auto}.eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;color:#adc2ff}.hero h1{font-size:clamp(32px,5vw,54px);line-height:1.15;margin:12px 0 18px}.hero p{max-width:850px;color:#d9e4fb;font-size:18px}.badge{display:inline-block;margin:8px 8px 0 0;padding:6px 10px;border:1px solid #5f7dba;border-radius:999px;font-size:12px;color:#e3ebff}.wrap{padding:38px 24px 80px}.notice{background:#edf4ff;border:1px solid #cddcff;border-radius:14px;padding:18px 20px;margin-bottom:26px}.notice strong{color:#244fbd}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 8px 28px rgba(25,42,75,.06)}h2{margin:44px 0 16px;font-size:28px}h3{margin:4px 0 10px;font-size:19px}.decision{border-left:4px solid var(--good)}.reject{border-left:4px solid #c14343}.reuse{border-left:4px solid var(--accent)}.flow{white-space:pre;overflow:auto;background:#0e1729;color:#dce8ff;border-radius:14px;padding:24px;font:14px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}table{border-collapse:collapse;width:100%;min-width:720px}th,td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}th{background:#f0f4fa;font-size:13px}tr:last-child td{border-bottom:0}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#edf1f7;padding:2px 5px;border-radius:5px}.links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.links a{display:block;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;text-decoration:none;color:#244fbd}.links a:hover{border-color:#86a3ff;transform:translateY(-1px)}.links small{display:block;color:var(--muted);margin-top:4px}.sequence{background:#fff7e8;border:1px solid #f0d39f;border-radius:14px;padding:18px 20px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.footer{color:var(--muted);font-size:13px;margin-top:44px;padding-top:22px;border-top:1px solid var(--line)}ul{padding-left:22px}@media(max-width:760px){.grid,.links{grid-template-columns:1fr}.hero{padding:46px 20px}.wrap{padding:26px 16px 60px}}
+</style>
+</head>
+<body>
+<header class="hero" id="top"><div class="hero-inner">
+<div class="eyebrow">Architecture Decision &amp; Execution Baseline</div>
+<h1>HTML Edit 技术架构与开源选型执行规范 v2</h1>
+<p>面向开发 Agent 的标准技术入口：继续现有仓库，自研产品内核，精准复用成熟开源模块；以真实 Chromium DOM 为画布，以 HE Project Graph 为持续编辑投影。</p>
+<span class="badge">状态：已冻结</span><span class="badge">日期：2026-08-25</span><span class="badge">仓库：ArchitectureWorld/html-edit</span>
+</div></header>
+<main class="wrap">
+<div class="notice"><strong>权威说明：</strong>本 HTML 是便于浏览的架构总览。完整、可被开发 Agent 精确引用的技术内容已拆分为主索引与四个 Markdown 分卷，并与产品定义、研发方案和 ADR-001 共同构成权威基线。</div>
+
+<h2>1. 最终结论</h2>
+<div class="grid">
+<section class="card decision"><h3>采用：混合路线</h3><p><strong>继续在现有仓库开发，采用“自研核心 + 精准复用开源模块”。</strong></p><p>真实 HTML/CSS/JavaScript 保持独立运行；HE Project Graph 保存稳定身份、Source Binding、时间线、交互和事务记录。</p></section>
+<section class="card reject"><h3>不采用：完整 Fork</h3><p>不得 Fork OpenPencil、GrapesJS、Webstudio 或 Scena 作为产品底座，也不得用 Canvas SceneGraph 替代真实 DOM。</p></section>
+<section class="card reuse"><h3>直接复用</h3><p>Electron、Chromium、React、TypeScript、Vite、Zod、parse5、Magic String、PostCSS、CSSTree、Moveable、Selecto、Monaco、Vitest、Playwright、Electron Forge。</p></section>
+<section class="card"><h3>只借鉴、不绑定</h3><p>OpenPencil 的包边界、格式 Adapter、CLI/MCP；Webstudio 的 CSS Inspector；Puck 的组件 Schema；Scena/Theatre 的时间线 UX；Remotion/HyperFrames 的后期视频输出工作流。</p></section>
+</div>
+
+<h2>2. 核心架构</h2>
+<div class="flow">Human UI / Future CLI / Future MCP / Future Agent
+                         │
+                         ▼
+                 Command Gateway
+                         ▼
+              Transaction Coordinator
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+HE Project Graph   Source Patch      Timeline /
++ Source Binding      Engine         Interaction
+        └────────────────┼────────────────┘
+                         ▼
+                  Preview Compiler
+                         ▼
+             Sandboxed same-origin iframe
+                   Real Chromium DOM
+                         ▲
+                         │
+          Preview Bridge / Runtime DOM Index
+                         ▲
+                         │
+     Host Overlay / Selection / Moveable / Selecto</div>
+
+<h2>3. 数据权威关系</h2>
+<div class="table-wrap"><table><thead><tr><th>权威域</th><th>负责内容</th><th>禁止误解</th></tr></thead><tbody>
+<tr><td>用户 HTML / CSS / JavaScript</td><td>网页语义、原始结构、未知代码、CSS 级联、独立运行结果</td><td>不是唯一的工程数据来源</td></tr>
+<tr><td>HE Project Graph 与附加数据</td><td>稳定 ID、Source Binding、编辑器元数据、时间线、交互、revision、Operation Log</td><td>不是完整 DOM 副本，也不替代网页源码</td></tr>
+<tr><td>真实 DOM</td><td>当前运行画面、命中测试、预览与最终浏览器行为</td><td>不是独立持久化真相</td></tr>
+<tr><td>Command / Transaction</td><td>同步修改源码与 HE 数据，提供校验、回滚、Undo/Redo</td><td>UI、Agent、插件不得绕过</td></tr>
+</tbody></table></div>
+
+<h2>4. 必须自研与复用边界</h2>
+<div class="table-wrap"><table><thead><tr><th>类别</th><th>模块</th><th>原则</th></tr></thead><tbody>
+<tr><td>必须自研</td><td>HE Project Graph、Source Binding、Command/Transaction、视觉语义 Selection、Preview Bridge、Source Patch、CSS provenance、deterministic Timeline、Interaction Compiler</td><td>这些能力决定产品是否成立和长期可控</td></tr>
+<tr><td>直接复用</td><td>浏览器、解析器、编辑控件、代码编辑器、测试与打包工具</td><td>固定版本、记录许可证、通过 Adapter 隔离</td></tr>
+<tr><td>后期 Adapter</td><td>OpenPencil/.pen、Remotion、FFmpeg、HyperFrames、Lottie、Three.js/3DGS</td><td>不得反向控制核心 Schema</td></tr>
+<tr><td>opaque/embed</td><td>Canvas/WebGL 内部、跨域 iframe、Closed Shadow Root、无源码动态节点、未知组件</td><td>宁可明确降级，也不做虚假的“无损支持”承诺</td></tr>
+</tbody></table></div>
+
+<h2>5. MVP 成立条件</h2>
+<div class="sequence">打开普通 HTML 项目
+→ 在真实画布中正确选择视觉对象
+→ 修改文字、属性、样式与基础变换
+→ 多选、拖动、缩放、吸附
+→ Undo / Redo
+→ 最小化并安全回写源码
+→ 保存、关闭、重新打开
+→ 页面仍可独立运行
+→ HE Graph 与源码引用一致
+→ 外部修改冲突可见且不会误写</div>
+<p>未通过该 Gate，不进入正式 Timeline、Agent/MCP、CRDT、最终 MP4 或 OpenPencil Adapter 开发。</p>
+
+<h2>6. 开发顺序</h2>
+<div class="sequence">SCH-001  Schema 基础
+→ GRF-001  HE Project Graph
+→ BND-001  Source Binding
+→ CMD-001  Command Gateway
+→ TXN-001  Transaction Core
+→ PRV-001  Preview Bridge
+→ SEL-001  接入现有 Selection Core
+→ OVL-001  Overlay Editor
+→ SRC-001 / CSS-001
+→ EDT-001 / STO-001
+→ 第一阶段人工闭环 Gate</div>
+<p><code>PLT-001</code> 的 Electron / React / Vite 应用壳可与 <code>SCH-001</code> 并行，但不得建立替代 HE Core 的临时业务模型。</p>
+
+<h2>7. 完整技术文档</h2>
+<div class="links">
+<a href="technical-architecture.md"><strong>技术架构主索引</strong><small>最终决策、路线评分、仓库判断与阅读顺序</small></a>
+<a href="open-source-evaluation.md"><strong>开源候选深度评估</strong><small>OpenPencil、GrapesJS、Webstudio、Scena、Theatre.js 等</small></a>
+<a href="core-model-and-runtime.md"><strong>核心模型与运行时</strong><small>HE Project Graph、Source Binding、真实 DOM、Overlay</small></a>
+<a href="source-timeline-agent.md"><strong>源码、时间线、交互与 Agent</strong><small>Source Patch、Timeline、Interaction、JSON/CRDT、CLI/MCP</small></a>
+<a href="implementation-and-governance.md"><strong>实施与工程治理</strong><small>16 周计划、任务 ID、质量门槛、风险、参考资料</small></a>
+<a href="../engineering-plan.md"><strong>研发实施方案 v2</strong><small>开发 Agent 直接执行的包目录、依赖和验收规范</small></a>
+<a href="../product-core.md"><strong>产品核心定义 v2</strong><small>产品目标、MVP 边界与成立条件</small></a>
+<a href="../adr/0001-core-architecture-decisions.md"><strong>ADR-001</strong><small>已经冻结、不得擅自更改的核心决策</small></a>
+</div>
+
+<div class="footer">HTML Edit Architecture Baseline v2 · 2026-08-25 · 完整执行规则同时见仓库根目录 <code>AGENTS.md</code>。</div>
+</main>
+</body>
+</html>
